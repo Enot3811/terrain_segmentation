@@ -1,0 +1,23 @@
+# Parameters, environment, data and other
+.vscode/**
+data/**
+venv/**
+
+# Pycache
+__pycache__*
+*.pyc
+
+# Temporary files
+_.py
+test_config.json
+
+# Model checkpoints
+*.pt
+*.pth
+
+# Tensorboard
+*events.out.tfevents*
+
+# Trains
+**/runs/**
+**/trains/**
