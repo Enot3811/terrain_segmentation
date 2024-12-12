@@ -14,3 +14,7 @@ Package that contains helper tools.
 
 ## unet
 Experiment with handwritten UNet.
+
+## cloud_cls
+Small classification sub-task to filter out clouds and blurry images by using
+YOLOv8-cls model.
