@@ -21,3 +21,6 @@ test_config.json
 # Trains
 **/runs/**
 **/trains/**
+
+# Exceptions
+!data/deeplab1.png
