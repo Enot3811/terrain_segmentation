@@ -233,7 +233,7 @@ def show_images_cv2(
                 title = f'{window_title}_{i}'
             else:
                 title = window_title[i]
-            if rgb_to_bgr:
+            if rgb_to_bgr and image.shape[-1] == 3:
                 image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
             cv2.imshow(title, image)
     elif isinstance(images, np.ndarray):
