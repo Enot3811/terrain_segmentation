@@ -7,7 +7,7 @@ Contains utilities for:
 """
 
 
-from typing import Union, List, Iterable, Tuple, Optional
+from typing import Union, List, Iterable, Tuple, Optional, Dict
 from pathlib import Path
 
 import numpy as np
@@ -447,3 +447,28 @@ def read_volume(path: Union[Path, str], **read_image_kwargs) -> NDArray:
         raise ValueError(
             f'The file extension of the path "{str(path)}" is not proper.')
     return vol
+
+
+def generate_class_to_colors(
+    n_classes: int,
+    classes_ids: Optional[List[int]] = None
+) -> Dict[int, Tuple[int, int, int]]:
+    """Generate random colors for classes.
+
+    Parameters
+    ----------
+    n_classes : int
+        Number of classes.
+    classes_ids : Optional[List[int]], optional
+        List of classes ids to generate colors for. If `None` then colors
+        will be generated for all classes. By default `None`.
+
+    Returns
+    -------
+    Dict[int, Tuple[int, int, int]]
+        Mapping from class labels to colors.
+    """
+    if classes_ids is None:
+        classes_ids = range(n_classes)
+    return {cls: tuple(np.random.randint(0, 256, size=3))
+            for cls in classes_ids}

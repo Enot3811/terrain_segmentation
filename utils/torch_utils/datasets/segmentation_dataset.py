@@ -11,7 +11,8 @@ from tqdm import tqdm
 from loguru import logger
 
 from ...data_utils.functions import (
-    collect_paths, IMAGE_EXTENSIONS, read_volume, prepare_path)
+    collect_paths, IMAGE_EXTENSIONS, read_volume, prepare_path,
+    generate_class_to_colors)
 
 
 class SegmentationDataset(Dataset):
@@ -468,7 +469,4 @@ class SegmentationDataset(Dataset):
         Dict[int, Tuple[int, int, int]]
             Mapping from class labels to colors.
         """
-        if classes_ids is None:
-            classes_ids = range(n_classes)
-        return {cls: tuple(np.random.randint(0, 256, size=3))
-                for cls in classes_ids}
+        return generate_class_to_colors(n_classes, classes_ids)
