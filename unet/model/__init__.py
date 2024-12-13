@@ -1,1 +1,1 @@
-from region_localizer.unet.model.unet import Unet  # noqa
+from unet.model.unet import Unet  # noqa
