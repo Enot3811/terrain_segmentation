@@ -10,6 +10,7 @@ from numpy.typing import NDArray
 from tqdm import tqdm
 from loguru import logger
 
+from ..functions import convert_seg_mask_to_one_hot
 from ...data_utils.functions import (
     collect_paths, IMAGE_EXTENSIONS, read_volume, prepare_path,
     generate_class_to_colors)
@@ -309,27 +310,28 @@ class SegmentationDataset(Dataset):
     
     @staticmethod
     def seg_mask_to_one_hot(
-        class_mask: NDArray, n_classes: int
+        seg_mask: NDArray, n_classes: int, classes_first: bool = True
     ) -> NDArray:
         """Convert class mask to one-hot encoding.
 
         Parameters
         ----------
-        class_mask : NDArray
-            Class mask with shape `(h, w)`.
+        seg_mask : LongTensor
+            Segmentation mask with shape `(h, w)` or `(b, h, w)` for batch.
         n_classes : int
-            Number of classes.
+            Number of classes in given segmentation mask.
+        classes_first : bool, optional
+            Whether to put classes dim first (or second for batch). Otherwise
+            classes dim expected to be last. By default is `True`.
 
         Returns
         -------
         NDArray
             One-hot encoding with shape `(h, w, n_classes)`.
         """
-        one_hot = np.zeros((*class_mask.shape[:2], n_classes), dtype=np.uint8)
-        for cls in range(n_classes):
-            one_hot[..., cls] = class_mask == cls
-        return one_hot
-    
+        return convert_seg_mask_to_one_hot(
+            seg_mask, n_classes, classes_first=classes_first)
+
     @staticmethod
     def one_hot_to_seg_mask(
         one_hot: NDArray

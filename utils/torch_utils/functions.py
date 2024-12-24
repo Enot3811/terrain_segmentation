@@ -238,35 +238,46 @@ def read_segmentation_mask(
 
 
 def convert_seg_mask_to_one_hot(
-    class_mask: LongTensor, n_classes: int
+    seg_mask: LongTensor, n_classes: int, cls_dim: int = 0
 ) -> LongTensor:
-    """Convert class mask to one-hot encoding.
+    """Convert segmentation mask to one-hot encoding.
 
     Parameters
     ----------
-    class_mask : LongTensor
-        Class mask with shape `(h, w)` or `(b, h, w)` for batch.
+    seg_mask : LongTensor
+        Segmentation mask with shape `(h, w)` or `(b, h, w)` for batch.
     n_classes : int
-        Number of classes.
+        Number of classes in given segmentation mask.
+    cls_dim : int, optional
+        Dimension to put classes in one-hot mask. By default is `0`.
 
     Returns
     -------
     LongTensor
-        One-hot encoding with shape `(n_classes, h, w)` or
-        `(b, n_classes, h, w)` for batch.
+        One-hot encoded mask.
     """
-    if class_mask.ndim == 2:
-        one_hot = torch.zeros((n_classes, *class_mask.shape), dtype=torch.long)
-    elif class_mask.ndim == 3:
-        one_hot = torch.zeros(
-            (class_mask.shape[0], n_classes, *class_mask.shape[1:]),
-            dtype=torch.long, device=class_mask.device
-        )
+    # Prepare shape for one-hot mask
+    if cls_dim == -1:
+        cls_dim = len(seg_mask.shape)
+    one_hot_shape = list(seg_mask.shape)
+    one_hot_shape.insert(cls_dim, n_classes)
+    
+    one_hot = torch.zeros(one_hot_shape, dtype=torch.long)
+
     for cls in range(n_classes):
-        if class_mask.ndim == 2:
-            one_hot[cls] = class_mask == cls
-        elif class_mask.ndim == 3:
-            one_hot[:, cls] = class_mask == cls
+        if cls_dim == 0:
+            one_hot[cls] = seg_mask == cls
+        elif cls_dim == 1:
+            one_hot[:, cls] = seg_mask == cls
+        else:
+            one_hot[..., cls] = seg_mask == cls
+    
+    # Fill one-hot mask by iterating over classes
+    for cls_id in range(n_classes):
+        index = [slice(None)] * len(seg_mask.shape)
+        index.insert(cls_dim, cls_id)
+        one_hot[tuple(index)] = (seg_mask == cls_id)
+
     return one_hot
 
 
