@@ -5,7 +5,7 @@ Press esc to end iteration. Press any other key to continue to the next sample.
 
 import sys
 from pathlib import Path
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple
 import argparse
 
 import torch
@@ -27,9 +27,7 @@ def main(
     batch_size: int = 4,
     random_seed: int = 42,
     one_hot_encoding: bool = False,
-    check_classes: bool = False,
-    classes_to_train: Optional[List[int]] = None,
-    binary_segmentation: bool = False
+    check_classes: bool = False
 ):
     # Configure random
     torch.random.manual_seed(random_seed)
@@ -42,9 +40,7 @@ def main(
 
     # Create dataset
     dataset = SegmentationDataset(
-        dataset_path, transforms=transforms, one_hot_encoding=one_hot_encoding,
-        cls_ids_to_train=classes_to_train,
-        binary_segmentation=binary_segmentation
+        dataset_path, transforms=transforms, one_hot_encoding=one_hot_encoding
     )
 
     # Check classes
@@ -56,6 +52,7 @@ def main(
                 f'but {dataset.n_classes} are expected.')
         print(f'Classes in the dataset: {classes}')
 
+    # Check loading raw dataset
     for idx in tqdm(range(len(dataset)), 'Iterating over source samples'):
         sample = dataset.get_source_sample(idx)
         image = sample['image']
@@ -142,11 +139,6 @@ def parse_args() -> argparse.Namespace:
                         help='Random seed for reproducibility.')
     parser.add_argument('--check_classes', action='store_true',
                         help='Check classes in the dataset.')
-    parser.add_argument('--classes_to_train', type=int, nargs='+',
-                        default=None,
-                        help='Classes ids that dataset will be filtered by.')
-    parser.add_argument('--binary_segmentation', action='store_true',
-                        help='Use binary segmentation.')
 
     return parser.parse_args()
 
@@ -156,6 +148,4 @@ if __name__ == '__main__':
     main(dataset_path=args.dataset_path, crop_size=args.crop_size,
          batch_size=args.batch_size, random_seed=args.random_seed,
          one_hot_encoding=args.one_hot_encoding,
-         check_classes=args.check_classes,
-         classes_to_train=args.classes_to_train,
-         binary_segmentation=args.binary_segmentation)
+         check_classes=args.check_classes)

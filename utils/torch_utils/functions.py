@@ -256,21 +256,12 @@ def convert_seg_mask_to_one_hot(
     LongTensor
         One-hot encoded mask.
     """
-    # Prepare shape for one-hot mask
+    # Prepare one-hot mask
     if cls_dim == -1:
         cls_dim = len(seg_mask.shape)
-    one_hot_shape = list(seg_mask.shape)
-    one_hot_shape.insert(cls_dim, n_classes)
-    
-    one_hot = torch.zeros(one_hot_shape, dtype=torch.long)
-
-    for cls in range(n_classes):
-        if cls_dim == 0:
-            one_hot[cls] = seg_mask == cls
-        elif cls_dim == 1:
-            one_hot[:, cls] = seg_mask == cls
-        else:
-            one_hot[..., cls] = seg_mask == cls
+    one_hot = torch.zeros(
+        (*seg_mask.shape[:cls_dim], n_classes, *seg_mask.shape[cls_dim + 1:]),
+        dtype=torch.long)
     
     # Fill one-hot mask by iterating over classes
     for cls_id in range(n_classes):
@@ -282,14 +273,14 @@ def convert_seg_mask_to_one_hot(
 
 
 def convert_seg_mask_to_color(
-    seg_mask: LongTensor,
+    seg_mask: NDArray,
     cls_to_color: Dict[int, Tuple[int, int, int]]
 ) -> NDArray:
     """Convert segmentation mask to color mask.
 
     Parameters
     ----------
-    seg_mask : LongTensor
+    seg_mask : NDArray
         Segmentation mask with shape `(h, w)` or `(b, h, w)` for batch.
     cls_to_color : Dict[int, Tuple[int, int, int]]
         A dict with classes as keys and colors as values.
@@ -300,8 +291,8 @@ def convert_seg_mask_to_color(
         Color mask with shape `(h, w, 3)` or `(b, h, w, 3)` for batch.
     """
     color_mask = np.zeros((*seg_mask.shape, 3), dtype=np.uint8)
-    for cls, color in cls_to_color.items():
-        color_mask[seg_mask == cls] = color
+    for cls_id, color in cls_to_color.items():
+        color_mask[seg_mask == cls_id] = color
     return color_mask
 
 
