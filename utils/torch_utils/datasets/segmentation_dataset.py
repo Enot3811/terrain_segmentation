@@ -1,3 +1,23 @@
+"""Torch dataset for segmentation tasks.
+    
+Sample of this dataset represents a pair of image and mask and additional
+metadata as image path, mask path, and source image shape.
+
+Dataset consists of
+1) "images" directory that contain image or numpy files.
+2) "masks" directory that contain mask image or numpy files.
+3) "classes.json" file that contains class to id and class to color mappings.
+
+If masks have some classes that are not present in the classes.json file,
+then they will be discarded during sample preprocessing.
+If classes.json does not have class to color mapping, then colors will be
+randomly assigned.
+
+Unique classes that encountered in the dataset can be collected by calling
+`collect_classes_from_masks` method.
+"""
+
+
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union, Tuple, Set
 import json
@@ -10,7 +30,7 @@ from numpy.typing import NDArray
 from tqdm import tqdm
 from loguru import logger
 
-from ..functions import convert_seg_mask_to_one_hot
+from ..functions import convert_seg_mask_to_one_hot, convert_seg_mask_to_color
 from ...data_utils.functions import (
     collect_paths, IMAGE_EXTENSIONS, read_volume, prepare_path,
     generate_class_to_colors)
@@ -21,6 +41,20 @@ class SegmentationDataset(Dataset):
     
     Sample of this dataset represents a pair of image and mask and additional
     metadata as image path, mask path, and source image shape.
+
+    Dataset consists of
+    1) "images" directory that contain image or numpy files.
+    2) "masks" directory that contain mask image or numpy files.
+    3) "classes.json" file that contains class to id and class to color
+       mappings.
+
+    If masks have some classes that are not present in the classes.json file,
+    then they will be discarded during sample preprocessing.
+    If classes.json does not have class to color mapping, then colors will be
+    randomly assigned.
+
+    Unique classes that encountered in the dataset can be collected by calling
+    `collect_classes_from_masks` method.
     """
 
     def __init__(
@@ -28,34 +62,26 @@ class SegmentationDataset(Dataset):
         dset_pth: Path,
         transforms: Optional[callable] = None,
         one_hot_encoding: bool = False,
-        cls_ids_to_train: Optional[List[int]] = None,
-        binary_segmentation: bool = False
     ) -> None:
         """Initialize segmentation dataset.
 
         Parameters
         ----------
         dset_pth : Path
-            Path to the dataset directory.
+            Path to the dataset directory. It expected to contain
+            "images" and "masks" directories and "classes.json" file.
         transforms : Optional[callable], optional
             Transforms to apply to the samples.
             It assumed to use albumentations.
             By default None.
         one_hot_encoding : bool, optional
             Whether to convert mask to one-hot encoding, by default `True`.
-        cls_ids_to_train : Optional[List[int]], optional
-            List of classes ids to train on. If `None` then all classes will
-            be used for training. By default `None`.
-        binary_segmentation : bool, optional
-            Whether to use binary segmentation, by default `False`.
         """
         # Dataset path
         self.dset_pth = prepare_path(dset_pth)
         self.image_dir = self.dset_pth / 'images'
         self.mask_dir = self.dset_pth / 'masks'
         self.classes_json = self.dset_pth / 'classes.json'
-        self.cls_ids_to_train = cls_ids_to_train
-        self.binary_segmentation = binary_segmentation
 
         # Check paths
         if not self.image_dir.exists():
@@ -68,67 +94,13 @@ class SegmentationDataset(Dataset):
             raise FileNotFoundError(
                 f'Classes mapping file {self.classes_json} does not exist.')
 
-        # Load classes
-        if not self.binary_segmentation:
-            with open(self.classes_json, 'r') as f:
-                classes_info = json.load(f)
+        # Load classes, create mappings
+        self._load_classes_file()
 
-                # Class to id mapping
-                if 'class_to_id' not in classes_info:
-                    raise ValueError(
-                        'Class to id mapping is not found '
-                        'in the classes.json file.')
-                self.class_to_id = classes_info['class_to_id']
-
-                # Check if all classes to train are in the dataset
-                if (self.cls_ids_to_train is not None and
-                    not all(map(
-                        lambda cls_id: cls_id in self.class_to_id.values(),
-                        self.cls_ids_to_train))):
-                    raise ValueError(
-                        'All classes to train must be in the dataset.')
-
-                # Apply classes to train filter
-                if self.cls_ids_to_train is not None:
-                    self.class_to_id = {
-                        k: v for k, v in self.class_to_id.items()
-                        if v in self.cls_ids_to_train}
-
-                self.id_to_class = {v: k for k, v in self.class_to_id.items()}
-                self.n_classes = len(self.class_to_id)
-
-                # Class to color mapping
-                if 'class_to_color' not in classes_info:
-                    logger.warning(
-                        'Class to color mapping is not found '
-                        'in the classes.json file. Class colors will be '
-                        'randomly assigned.')
-                    self.class_to_color = self.generate_class_to_colors(
-                        self.n_classes, self.cls_ids_to_train)
-                else:
-                    self.class_to_color = classes_info['class_to_color']
-                    self.class_to_color = {
-                        k: v for k, v in self.class_to_color.items()
-                        if k in self.class_to_id}
-                
-                self.color_to_class = {
-                    tuple(v): k for k, v in self.class_to_color.items()}
-                
-                # Id to color mapping
-                self.id_to_color = {self.class_to_id[k]: tuple(v)
-                                    for k, v in self.class_to_color.items()}
-                self.color_to_id = {v: k for k, v in self.id_to_color.items()}
-        else:
-            self.n_classes = 2
-            self.class_to_id = {'background': 0, 'target': 1}
-            self.id_to_class = {0: 'background', 1: 'target'}
-            self.class_to_color = {0: (0, 0, 0), 1: (255, 255, 255)}
-            self.color_to_class = {(0, 0, 0): 0, (255, 255, 255): 1}
-            self.id_to_color = {0: (0, 0, 0), 1: (255, 255, 255)}
-            self.color_to_id = {(0, 0, 0): 0, (255, 255, 255): 1}
-
-        # Samples
+        # Load samples paths
         self.samples = self._collect_samples()
+
+        # Transforms and preprocessing
         self.transforms = transforms
         self.one_hot_encoding = one_hot_encoding
 
@@ -178,24 +150,18 @@ class SegmentationDataset(Dataset):
     ) -> Dict[str, Any]:
         """Process sample before applying transforms.
 
-        Filter target masks by classes to train.
-        Convert to binary mask if needed.
+        Filter target masks by classes defined in `class_to_id` mapping.
 
         Parameters
         ----------
         sample : Dict[str, Any]
             Sample dictionary with image and mask.
         """
-        # Filter target masks by classes to train
-        if self.cls_ids_to_train is not None:
-            zero_mask = np.ones_like(sample['mask'], dtype=np.bool_)
-            for cls_id in self.cls_ids_to_train:
-                zero_mask[sample['mask'] == cls_id] = False
-            sample['mask'][zero_mask] = 0
-        
-        # Convert to binary mask if needed
-        if self.binary_segmentation:
-            sample['mask'] = (sample['mask'] > 0).astype(np.uint8)
+        # Filter target masks by classes defined in `class_to_id` mapping
+        discard_mask = np.ones_like(sample['mask'], dtype=np.bool_)
+        for cls_id in self.id_to_class:
+            discard_mask[sample['mask'] == cls_id] = False
+        sample['mask'][discard_mask] = 0
         return sample
     
     def apply_transforms(self, sample: Dict[str, Any]) -> Dict[str, Any]:
@@ -237,22 +203,62 @@ class SegmentationDataset(Dataset):
             Normalized image, segmentation mask, image path, mask path,
             and source image shape.
         """
-        # Make mask convertion if needed
-        if self.binary_segmentation:
-            sample['mask'] = sample['mask'][..., None]
-        elif self.one_hot_encoding:
-            sample['mask'] = self.seg_mask_to_one_hot(
-                sample['mask'], self.n_classes)
+        # Convert mask
+        mask = torch.tensor(sample['mask'], dtype=torch.long)  # h, w
+        if self.one_hot_encoding:
+            mask = self.seg_mask_to_one_hot(mask, self.n_classes)  # c, h, w
 
         # Convert image to float tensor and normalize
         image = torch.tensor(
             sample['image'].transpose(2, 0, 1).astype(np.float32) / 255)
-        mask = torch.tensor(sample['mask'], dtype=torch.long)
-        if self.one_hot_encoding:
-            mask = mask.permute(2, 0, 1)
 
         return (image, mask, sample['image_path'], sample['mask_path'],
                 sample['shape'])
+    
+    def _load_classes_file(self) -> None:
+        """Load classes file.
+
+        Load classes info from file and create all mappings.
+
+        Raises
+        ------
+        ValueError
+            If class to id mapping is not found in the classes.json file.
+        """
+        with open(self.classes_json, 'r') as f:
+            classes_info = json.load(f)
+
+            # Class to id mapping
+            if 'class_to_id' not in classes_info:
+                raise ValueError(
+                    'Class to id mapping is not found '
+                    'in the classes.json file.')
+            self.class_to_id = classes_info['class_to_id']
+
+            self.id_to_class = {v: k for k, v in self.class_to_id.items()}
+            self.n_classes = len(self.class_to_id)
+
+            # Class to color mapping
+            if 'class_to_color' not in classes_info:
+                logger.warning(
+                    'Class to color mapping is not found '
+                    'in the classes.json file. Class colors will be '
+                    'randomly assigned.')
+                self.class_to_color = self.generate_class_to_colors(
+                    self.n_classes)
+            else:
+                self.class_to_color = classes_info['class_to_color']
+                self.class_to_color = {
+                    k: v for k, v in self.class_to_color.items()
+                    if k in self.class_to_id}
+            
+            self.color_to_class = {
+                tuple(v): k for k, v in self.class_to_color.items()}
+            
+            # Id to color mapping
+            self.id_to_color = {self.class_to_id[k]: tuple(v)
+                                for k, v in self.class_to_color.items()}
+            self.color_to_id = {v: k for k, v in self.id_to_color.items()}
 
     def _collect_samples(self) -> List[Dict[str, Path]]:
         """Collect samples from the dataset.
@@ -310,7 +316,7 @@ class SegmentationDataset(Dataset):
     
     @staticmethod
     def seg_mask_to_one_hot(
-        seg_mask: NDArray, n_classes: int, classes_first: bool = True
+        seg_mask: NDArray, n_classes: int, cls_dim: int = 0
     ) -> NDArray:
         """Convert class mask to one-hot encoding.
 
@@ -320,9 +326,8 @@ class SegmentationDataset(Dataset):
             Segmentation mask with shape `(h, w)` or `(b, h, w)` for batch.
         n_classes : int
             Number of classes in given segmentation mask.
-        classes_first : bool, optional
-            Whether to put classes dim first (or second for batch). Otherwise
-            classes dim expected to be last. By default is `True`.
+        cls_dim : int, optional
+            Dimension to put classes in one-hot mask. By default is `0`.
 
         Returns
         -------
@@ -330,7 +335,7 @@ class SegmentationDataset(Dataset):
             One-hot encoding with shape `(h, w, n_classes)`.
         """
         return convert_seg_mask_to_one_hot(
-            seg_mask, n_classes, classes_first=classes_first)
+            seg_mask, n_classes, cls_dim=cls_dim)
 
     @staticmethod
     def one_hot_to_seg_mask(
@@ -352,7 +357,7 @@ class SegmentationDataset(Dataset):
     
     @staticmethod
     def seg_mask_to_color(
-        seg_mask: NDArray, cls_to_colors: Dict[int, Tuple[int, int, int]]
+        seg_mask: NDArray, cls_to_color: Dict[int, Tuple[int, int, int]]
     ) -> NDArray:
         """Convert segmentation mask to color mask.
 
@@ -368,11 +373,7 @@ class SegmentationDataset(Dataset):
         NDArray
             Color mask 3D array.
         """
-        color_mask = np.zeros(seg_mask.shape[:2] + (3,), dtype=np.uint8)
-        for cls, color in cls_to_colors.items():
-            mask = seg_mask == cls
-            color_mask[mask] = color
-        return color_mask
+        return convert_seg_mask_to_color(seg_mask, cls_to_color)
 
     @staticmethod
     def color_mask_to_seg(
