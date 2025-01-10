@@ -400,57 +400,35 @@ class SegmentationDataset(Dataset):
         return seg_mask
     
     @staticmethod
-    def collate_func(
-        batch: List[Tuple[
-            FloatTensor,
-            LongTensor,
-            Path,
-            Path,
-            Tuple[int, int, int]
-        ]]
-    ) -> Tuple[
-        FloatTensor,
-        LongTensor,
-        List[Path],
-        List[Path],
-        List[Tuple[int, int, int]]
-    ]:
+    def collate_func(batch: List[Any]) -> Tuple[Any, ...]:
         """Collate function for the dataset.
-
+    
+        Automatically handles:
+        - Stacking tensors (like images and masks)
+        - Converting lists of other types (paths, shapes, labels, etc.)
+        
         Parameters
         ----------
-        batch : List[Tuple[
-            FloatTensor,
-            LongTensor,
-            Path,
-            Path,
-            Tuple[int, int, int]
-        ]]
-            List of samples.
-
+        batch : List[Any]
+            List of samples, where each sample is a tuple of elements
+        
         Returns
         -------
-        Tuple[
-            FloatTensor,
-            LongTensor,
-            List[Path],
-            List[Path],
-            List[Tuple[int, int, int]]
-        ]
-            Batch of samples.
+        Tuple[Any, ...]
+            Batch of collated elements
         """
-        images, masks, image_paths, mask_paths, shapes = zip(*batch)
+        batch = list(zip(*batch))
+    
+        collated = []
+        for elements in batch:
+            # If elements are tensors, stack them
+            if torch.is_tensor(elements[0]):
+                collated.append(torch.stack(elements, dim=0))
+            # Otherwise, convert to list
+            else:
+                collated.append(list(elements))
         
-        # Concatenate tensors along a new axis (batch dimension)
-        images = torch.stack(images, dim=0)
-        masks = torch.stack(masks, dim=0)
-        
-        # Pack paths and shapes into lists
-        image_paths = list(image_paths)
-        mask_paths = list(mask_paths)
-        shapes = list(shapes)
-        
-        return images, masks, image_paths, mask_paths, shapes
+        return tuple(collated)
     
     @staticmethod
     def generate_class_to_colors(
