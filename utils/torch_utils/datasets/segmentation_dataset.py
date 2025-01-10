@@ -136,7 +136,9 @@ class SegmentationDataset(Dataset):
         """
         sample = self.samples[index]
         image = read_volume(sample['image_path'])
-        mask = read_volume(sample['mask_path'], bgr_to_rgb=False)[..., 0]
+        mask = read_volume(sample['mask_path'], bgr_to_rgb=False)
+        if mask.ndim == 3:
+            mask = mask[..., 0]  # Take first channel if mask is image
         return {
             'image': image,
             'mask': mask,
