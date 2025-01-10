@@ -278,6 +278,9 @@ def convert_seg_mask_to_color(
 ) -> NDArray:
     """Convert segmentation mask to color mask.
 
+    If `seg_mask` has class ids that are not in `cls_to_color` then they will
+    be colored in black `(0, 0, 0)`.
+
     Parameters
     ----------
     seg_mask : NDArray
