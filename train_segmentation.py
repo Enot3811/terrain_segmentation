@@ -13,15 +13,15 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import albumentations as A
+from torchmetrics import (
+    Dice, JaccardIndex, Accuracy, MeanMetric, MetricCollection)
 
 from unet.model import Unet
 from deeplabv3.deeplabv3 import create_deeplabv3_model
 from utils.torch_utils.datasets import SegmentationDataset
-from utils.torch_utils.metrics import (
-    MeanMetric, DiceLoss, CombinedDiceCrossEntropyLoss, iou_segmentation,
-    dice_coefficient, pixel_accuracy)
+from utils.torch_utils.metrics import DiceLoss, CombinedDiceCrossEntropyLoss
 from utils.torch_utils.functions import (
-    SaveImagesSegCallback, ShowPredictCallback)
+    SaveImagesSegCallback, ShowPredictCallback, get_metric_class)
 
 
 def main(config_pth: Path):
@@ -201,6 +201,8 @@ def main(config_pth: Path):
     val_loss_metric = MeanMetric()
     train_loss_metric.to(device=device)
     val_loss_metric.to(device=device)
+
+    
 
     train_iou_metric = MeanMetric()
     train_dice_metric = MeanMetric()

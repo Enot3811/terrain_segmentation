@@ -7,7 +7,7 @@ Contains utilities for:
 """
 
 
-from typing import List, Tuple, Union, Dict, Optional
+from typing import List, Tuple, Union, Dict, Optional, Type
 from pathlib import Path
 
 import numpy as np
@@ -22,6 +22,7 @@ from tensorboard.backend.event_processing.event_file_loader import (
 from tensorboard.compat.proto import event_pb2
 from loguru import logger
 import matplotlib.pyplot as plt
+import torchmetrics
 
 from ..data_utils.functions import (
     read_image, save_image, show_images_cv2, resize_image)
@@ -753,3 +754,26 @@ def plot_tensorboard_events(
     if plt_show:
         plt.show()
     return axes
+
+
+def get_metric_class(class_name: str) -> Type[torchmetrics.Metric]:
+    """Get metric class from torchmetrics.
+
+    Parameters
+    ----------
+    class_name : str
+        Name of the metric class.
+
+    Returns
+    -------
+    Type[torchmetrics.Metric]
+        Metric class.
+
+    Raises
+    ------
+    ValueError
+        If metric class is not found in torchmetrics.
+    """
+    if hasattr(torchmetrics, class_name):
+        return getattr(torchmetrics, class_name)
+    raise ValueError(f"Metric class {class_name} not found in torchmetrics")
