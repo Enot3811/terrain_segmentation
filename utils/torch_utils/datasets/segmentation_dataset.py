@@ -29,6 +29,7 @@ import numpy as np
 from numpy.typing import NDArray
 from tqdm import tqdm
 from loguru import logger
+from natsort import natsorted
 
 from ..functions import convert_seg_mask_to_one_hot, convert_seg_mask_to_color
 from ...data_utils.functions import (
@@ -59,7 +60,7 @@ class SegmentationDataset(Dataset):
 
     def __init__(
         self,
-        dset_pth: Path,
+        dataset_path: Path,
         transforms: Optional[callable] = None,
         one_hot_encoding: bool = False,
     ) -> None:
@@ -67,7 +68,7 @@ class SegmentationDataset(Dataset):
 
         Parameters
         ----------
-        dset_pth : Path
+        dataset_path : Path
             Path to the dataset directory. It expected to contain
             "images" and "masks" directories and "classes.json" file.
         transforms : Optional[callable], optional
@@ -78,10 +79,10 @@ class SegmentationDataset(Dataset):
             Whether to convert mask to one-hot encoding, by default `True`.
         """
         # Dataset path
-        self.dset_pth = prepare_path(dset_pth)
-        self.image_dir = self.dset_pth / 'images'
-        self.mask_dir = self.dset_pth / 'masks'
-        self.classes_json = self.dset_pth / 'classes.json'
+        self.dataset_path = prepare_path(dataset_path)
+        self.image_dir = self.dataset_path / 'images'
+        self.mask_dir = self.dataset_path / 'masks'
+        self.classes_json = self.dataset_path / 'classes.json'
 
         # Check paths
         if not self.image_dir.exists():
@@ -275,12 +276,12 @@ class SegmentationDataset(Dataset):
         ValueError
             If number of images and masks are not equal.
         """
-        img_paths = sorted(
+        img_paths = natsorted(
             collect_paths(self.image_dir,
                           file_extensions=IMAGE_EXTENSIONS + ['npy', 'NPY']),
             key=lambda x: x.stem
         )
-        mask_paths = sorted(
+        mask_paths = natsorted(
             collect_paths(self.mask_dir,
                           file_extensions=IMAGE_EXTENSIONS + ['npy', 'NPY']),
             key=lambda x: x.stem

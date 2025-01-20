@@ -2,6 +2,7 @@ numpy==1.25.2
 matplotlib==3.7.3
 opencv-python==4.8.0.76
 pandas==2.1.0
+natsort==8.4.0
 
 flake8==6.1.0
 ipykernel==6.29.5
