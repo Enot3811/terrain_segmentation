@@ -22,21 +22,16 @@ from utils.torch_utils.datasets import SegmentationDataset
 from utils.torch_utils.metrics import DiceLoss, CombinedDiceCrossEntropyLoss
 from utils.torch_utils.functions import (
     SaveImagesSegCallback, ShowPredictCallback, get_metric_class)
+from utils.train_utils import get_transforms, read_config
 
 
 def main(config_pth: Path):
     # Read config
-    with open(config_pth, 'r') as f:
-        config_str = f.read()
-    config = json.loads(config_str)
+    config = read_config(config_pth)
 
     # Check config correctness
-    if (config['train_dataset_params']['one_hot_encoding'] !=
-            config['val_dataset_params']['one_hot_encoding']):
-        raise ValueError('Train and val dataset params must have the same '
-                         'one-hot encoding value.')
-    elif (not config['train_dataset_params']['one_hot_encoding'] and
-          config['loss_metric'] in ['dice', 'combined']):
+    if (not config['train_dataset_params']['one_hot_encoding'] and
+            config['loss_metric'] in ['dice', 'combined']):
         raise ValueError('Dice and combined loss metrics are supported only '
                          'with one-hot encoding.')
     elif Path(config['train_dir']).name != config_pth.stem:

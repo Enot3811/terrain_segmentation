@@ -1,0 +1,129 @@
+# Define constants
+num_classes: &num_classes 4
+image_channels: &image_channels 3
+data_root: &data_root ../data/satellite/segmentation/landcover_ai_v1
+one_hot_encoding: &one_hot_encoding true
+
+# Environment parameters
+random_seed: 42
+device: cpu
+train_dir: trains/deeplabv3plus_landcoverai
+
+# Optimizer parameters
+optimizer: Adam
+start_lr: 0.001
+end_lr: 1e-6
+weight_decay: 0.005
+grad_accumulate_steps: 4
+
+# Loss parameters (TODO обобщить на dice, bce, combined)
+loss_metric: cross_entropy
+ce_class_weights:
+  - 0.07574
+  - 0.49794
+  - 0.08663
+  - 0.33968
+
+# Training parameters
+continue_training: false
+n_epoch: 30
+
+# Model parameters
+model:
+  class_name: DeepLabV3Plus
+  params:
+    output_channels: *num_classes
+    n_stages: 5
+    initial_channels: 64
+    channels_upsampling: 2
+    image_channels: *image_channels
+    use_pad: true
+
+
+# Transforms
+train_transforms: &transforms
+  rotate:
+    class_name: Rotate
+    params:
+      limit: 180
+      crop_border: true
+  horizontal_flip:
+    class_name: HorizontalFlip
+    params:
+      p: 0.5
+  vertical_flip:
+    class_name: VerticalFlip
+    params:
+      p: 0.5
+  resize:
+    class_name: Resize
+    params:
+      height: 448
+      width: 448
+  normalize:
+    class_name: Normalize
+    params:
+      mean: [0.485, 0.456, 0.406]
+      std: [0.229, 0.224, 0.225]
+
+val_transforms:
+  resize:
+    class_name: Resize
+    params:
+      height: 448
+      width: 448
+  normalize:
+    class_name: Normalize
+    params:
+      mean: [0.485, 0.456, 0.406]
+      std: [0.229, 0.224, 0.225]
+
+# Dataset parameters
+train_dataset_params:
+  dataset_path: "{data_root}/train"
+  one_hot_encoding: *one_hot_encoding
+
+val_dataset_params:
+  dataset_path: "{data_root}/val"
+  one_hot_encoding: *one_hot_encoding
+
+# DataLoader parameters
+batch_size: 16
+num_workers: 0
+shuffle_train: true
+shuffle_val: false
+
+# Callbacks parameters
+callback_params:
+  steps_per_call: 16
+  save_images:
+    only_first_image: true
+    resize_shape: null
+    save_stacked: true
+
+# Metrics parameters
+metrics:
+  f1:
+    class_name: F1Score
+    params:
+      task: multiclass
+      num_classes: 4
+      average: null
+  dice:
+    class_name: Dice
+    params:
+      task: multiclass
+      num_classes: 4
+      average: null
+  pixel_acc:
+    class_name: Accuracy
+    params:
+      task: multiclass
+      num_classes: 4
+      average: null
+  iou:
+    class_name: JaccardIndex
+    params:
+      task: multiclass
+      num_classes: 4
+      average: null
