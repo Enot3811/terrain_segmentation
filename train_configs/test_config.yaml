@@ -2,7 +2,6 @@
 num_classes: &num_classes 4
 image_channels: &image_channels 3
 data_root: &data_root ../data/satellite/segmentation/landcover_ai_v1
-one_hot_encoding: &one_hot_encoding true
 
 # Environment parameters
 random_seed: 42
@@ -16,31 +15,11 @@ end_lr: 1e-6
 weight_decay: 0.005
 grad_accumulate_steps: 4
 
-# Loss parameters (TODO обобщить на dice, bce, combined)
+# Loss parameters
 loss:
-  - class_name: SoftCrossEntropyLoss
-    loss_weight: 0.5
-    class_weights:
-      - 0.07574
-      - 0.49794
-      - 0.08663
-      - 0.33968
-    params:
-      reduction: mean
-      smooth_factor: 0.0
-
-  - class_name: FocalLoss
-    loss_weight: 0.5
-    class_weights:
-      - 0.07574
-      - 0.49794
-      - 0.08663
-      - 0.33968
-    params:
-      mode: multiclass
-      reduction: mean
-      alpha: 0.25
-      gamma: 2.0
+  class_name: DiceLoss
+  params:
+    mode: multiclass
 
 # Training parameters
 continue_training: false
@@ -99,7 +78,7 @@ val_transforms:
 # Dataset parameters
 train_dataset_params:
   dataset_path: "{data_root}/train"
-  one_hot_encoding: *one_hot_encoding
+  one_hot_encoding: &one_hot_encoding 
 
 val_dataset_params:
   dataset_path: "{data_root}/val"
@@ -112,12 +91,14 @@ shuffle_train: true
 shuffle_val: false
 
 # Callbacks parameters
-callback_params:
+callback:
   steps_per_call: 16
-  save_images:
+  params:
+    save_dir: {train_dir}/images
     only_first_image: true
     resize_shape: null
     save_stacked: true
+    show_time: null
 
 # Metrics parameters
 metrics:

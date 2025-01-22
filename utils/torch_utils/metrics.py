@@ -219,6 +219,24 @@ class CrossEntropyLossMetric(Metric):
         return self.loss / self.n_total
 
 
+class MeanMetric(Metric):
+    def __init__(self):
+        super().__init__()
+        self.add_state('sum_value',
+                       default=torch.tensor(0, dtype=torch.float64),
+                       dist_reduce_fx='sum')
+        self.add_state('n_total',
+                       default=torch.tensor(0, dtype=torch.float64),
+                       dist_reduce_fx='sum')
+
+    def update(self, batch_value: FloatTensor):
+        self.sum_value += batch_value
+        self.n_total += 1
+
+    def compute(self):
+        return self.sum_value / self.n_total
+
+
 class DiceLoss(nn.Module):
     def __init__(
         self,
