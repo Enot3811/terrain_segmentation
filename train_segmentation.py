@@ -75,7 +75,9 @@ def main(config_pth: Path):
 
     # Get callback
     if config.get('callback', None):
-        callback = SaveImagesSegCallback(**config['callback']['params'])
+        callback = SaveImagesSegCallback(
+            cls_to_color=train_dset.class_to_color,
+            **config['callback']['params'])
     else:
         callback = None
 
@@ -87,7 +89,7 @@ def main(config_pth: Path):
 
     # Get loss function
     # TODO: smp losses does not support class weights
-    loss_fn = get_smp_loss_fn(config['loss'])
+    loss_fn = get_smp_loss_fn(config['loss']).to(device=device)
 
     # Get the optimizer
     if config['optimizer'] == 'Adam':
@@ -108,9 +110,9 @@ def main(config_pth: Path):
         lr_scheduler.load_state_dict(lr_params)
 
     # Get metrics
-    train_metrics = create_metric_collection(config['train_metrics']).to(
+    train_metrics = create_metric_collection(config['metrics']).to(
         device=device)
-    val_metrics = create_metric_collection(config['val_metrics']).to(
+    val_metrics = create_metric_collection(config['metrics']).to(
         device=device)
     train_loss_metric = MeanMetric().to(device=device)
     val_loss_metric = MeanMetric().to(device=device)
@@ -139,13 +141,15 @@ def main(config_pth: Path):
 
             # Calculate metrics
             with torch.no_grad():
-                train_metrics.update(out_logits, masks)
+                predicts = out_logits.argmax(dim=1)
+                train_metrics.update(predicts, masks)
                 train_loss_metric.update(loss)
 
             # Call callbacks
-            if callback and (step % config['steps_per_call'] == 0 or
-                             step + 1 == len(train_loader)):
-                callback(batch, out_logits, epoch, step)
+            if (callback and
+                    step % config['callback']['steps_per_call'] == 0 or
+                    step + 1 == len(train_loader)):
+                callback(batch, predicts, epoch, step)
 
             # Update progress bar
             pbar.update()
@@ -153,7 +157,6 @@ def main(config_pth: Path):
         
         # Calculate mean epoch loss
         train_loss = train_loss_metric.compute()
-        train_metrics.reset()
         train_loss_metric.reset()
         pbar.set_postfix_str(f'Epoch loss: {train_loss.item():.4f}')
         pbar.close()
@@ -171,13 +174,15 @@ def main(config_pth: Path):
                 loss = loss_fn(out_logits, masks)
 
                 # Calculate metrics
-                val_metrics.update(out_logits, masks)
+                predicts = out_logits.argmax(dim=1)
+                val_metrics.update(predicts, masks)
                 val_loss_metric.update(loss)
 
                 # Call callbacks
-                if callback and (step % config['steps_per_call'] == 0 or
-                                 step + 1 == len(val_loader)):
-                    callback(batch, out_logits, epoch, step)
+                if (callback and
+                        step % config['callback']['steps_per_call'] == 0 or
+                        step + 1 == len(val_loader)):
+                    callback(batch, predicts, epoch, step)
 
                 # Update progress bar
                 pbar.update()
@@ -185,7 +190,6 @@ def main(config_pth: Path):
 
             # Calculate mean epoch loss
             val_loss = val_loss_metric.compute()
-            val_metrics.reset()
             val_loss_metric.reset()
             pbar.set_postfix_str(f'Epoch loss: {val_loss.item():.4f}')
             pbar.close()
@@ -194,33 +198,33 @@ def main(config_pth: Path):
         lr_scheduler.step()
         lr = lr_scheduler.get_last_lr()[0]
 
-        # Log epoch metrics
+        # Log epoch losses
         log_writer.add_scalars('loss', {
             'train': train_loss,
             'val': val_loss
         }, epoch)
 
-        # Iterate over train and val metrics
-        for (name, metric_train), metric_val in zip(
-                train_metrics.items(), val_metrics.values()):
-            # Compute each separately
-            metric_train_values = metric_train.compute()
-            metric_val_values = metric_val.compute()
+        # Log epoch metrics
+        train_metric_values = train_metrics.compute()
+        val_metric_values = val_metrics.compute()
+        train_metrics.reset()
+        val_metrics.reset()
 
+        for metric_name in train_metrics:
             # Log mean values
-            log_writer.add_scalars(name, {
-                'train_avg': metric_train_values.mean(),
-                'val_avg': metric_val_values.mean()
+            log_writer.add_scalars(metric_name, {
+                'train': train_metric_values[metric_name].mean(),
+                'val': val_metric_values[metric_name].mean(),
             }, epoch)
 
             # Log class values
-            log_writer.add_scalars(name, {
+            log_writer.add_scalars(metric_name + '_per_class', {
                 f'train_class_{i}': value
-                for i, value in enumerate(metric_train_values)
+                for i, value in enumerate(train_metric_values[metric_name])
             }, epoch)
-            log_writer.add_scalars(name, {
+            log_writer.add_scalars(metric_name + '_per_class', {
                 f'val_class_{i}': value
-                for i, value in enumerate(metric_val_values)
+                for i, value in enumerate(val_metric_values[metric_name])
             }, epoch)
 
         log_writer.add_scalar('Lr', lr, epoch)

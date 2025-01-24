@@ -95,5 +95,5 @@ def main(config_path: str):
 
 
 if __name__ == '__main__':
-    config_path = 'train_configs/deeplabv3plus_landcoverai.yaml'
+    config_path = 'train_configs/test_config.yaml'
     main(config_path)

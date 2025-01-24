@@ -9,7 +9,7 @@ Contains utilities for:
 
 from typing import List, Tuple, Union, Dict, Optional
 from pathlib import Path
-
+import shutil
 import numpy as np
 from numpy.typing import NDArray
 import cv2
@@ -307,17 +307,18 @@ class SaveImagesSegCallback:
 
     def __init__(
         self,
-        save_dir: Path,
+        save_dir: Union[Path, str],
         cls_to_color: Dict[int, Tuple[int, int, int]],
         only_first_image: bool = False,
         resize_shape: Optional[Tuple[int, int]] = None,
-        save_stacked: bool = True
+        save_stacked: bool = True,
+        show_time: Optional[int] = None
     ) -> None:
         """Initialize callback for saving images.
 
         Parameters
         ----------
-        save_dir : Path
+        save_dir : Union[Path, str]
             Directory to save images.
         cls_to_color : Dict[int, Tuple[int, int, int]]
             A dict with classes as keys and colors as values.
@@ -328,12 +329,24 @@ class SaveImagesSegCallback:
         save_stacked : bool, optional
             Whether to save stacked predicts, images and labels instead of
             separate ones. By default is `True`.
+        show_time : Optional[int], optional
+            Time in milliseconds to wait before continuing.
+            By default is `None` which means that the image will not be shown.
         """
+        if isinstance(save_dir, str):
+            save_dir = Path(save_dir)
+        if save_dir.exists():
+            input(f'Directory {str(save_dir)} already exists. '
+                  'Press Enter to delete it and continue...')
+            shutil.rmtree(save_dir)
+        save_dir.mkdir(parents=True)
+
         self.only_first_image = only_first_image
         self.save_dir = save_dir
         self.resize_shape = resize_shape
         self.save_stacked = save_stacked
         self.cls_to_color = cls_to_color
+        self.show_time = show_time
 
     def __call__(
         self,
@@ -363,10 +376,10 @@ class SaveImagesSegCallback:
             masks = masks[0][None, ...]
             predicts = predicts[0][None, ...]
         images = images.permute(0, 2, 3, 1).cpu().numpy()
-        if masks.shape[1] == 1:
-            masks = masks.squeeze().cpu().numpy()
-        else:
-            masks = masks.argmax(dim=1).cpu().numpy()
+        # Check if masks are one-hot encoded
+        if masks.ndim == 4:
+            masks = masks.argmax(dim=1)
+        masks = masks.cpu().numpy()
         images = (images * 255).astype(np.uint8)
         masks = convert_seg_mask_to_color(masks, self.cls_to_color)
         predicts = convert_seg_mask_to_color(predicts, self.cls_to_color)
@@ -387,11 +400,24 @@ class SaveImagesSegCallback:
                 concatenated_image = np.concatenate(
                     [mask, image, predict],
                     axis=1)
+                
+                if self.show_time is not None:
+                    show_images_cv2(
+                        [concatenated_image], ['mask/image/predict'],
+                        delay=self.show_time, destroy_windows=False
+                    )
+
                 save_image(
                     concatenated_image,
                     self.save_dir / f'{epoch}_{step}_{sample_name}.jpg'
                 )
             else:
+                if self.show_time is not None:
+                    show_images_cv2(
+                        [image, mask, predict], ['image', 'mask', 'predict'],
+                        delay=self.show_time, destroy_windows=False
+                    )
+
                 save_image(
                     image,
                     self.save_dir / f'{epoch}_{step}_{sample_name}_image.jpg'
@@ -407,91 +433,6 @@ class SaveImagesSegCallback:
             
             if self.only_first_image:
                 break
-
-
-class ShowPredictCallback:
-    """Callback for showing model predictions during training.
-    
-    Use it in train loop to show model predictions.
-    """
-
-    def __init__(
-        self,
-        cls_to_color: Dict[int, Tuple[int, int, int]],
-        wait_time: int = 1,
-        only_first_image: bool = False,
-        resize_shape: Optional[Tuple[int, int]] = None,
-    ) -> None:
-        """Initialize callback for showing model predictions.
-
-        Parameters
-        ----------
-        cls_to_color : Dict[int, Tuple[int, int, int]]
-            A dict with classes as keys and colors as values.
-        wait_time : int, optional
-            Time in milliseconds to wait before continuing. By default is `1`.
-            If `0` then the image will wait until an any key is pressed.
-        only_first_image : bool, optional
-            Whether to show only first image in batch. By default is `False`.
-        resize_shape : Optional[Tuple[int, int]], optional
-            Shape to resize images before showing. By default is `None`.
-        """
-        self.wait_time = wait_time
-        self.resize_shape = resize_shape
-        self.only_first_image = only_first_image
-        self.cls_to_color = cls_to_color
-
-    def __call__(
-        self,
-        batch: Tuple,
-        predicts: Tensor,
-        epoch: int,
-        step: int,
-    ) -> None:
-        """Save images.
-
-        Parameters
-        ----------
-        batch : Tuple
-            Batch of images, masks, image paths, mask paths and shapes.
-        predicts : Tensor
-            Model predictions with shape `(b, c, h, w)`.
-        epoch : int
-            Current epoch number.
-        step : int
-            Current step number.
-        """
-        images, masks, img_paths, mask_paths, shapes = batch
-        
-        # Prepare inputs and predictions
-        if self.only_first_image:
-            images = images[0][None, ...]
-            masks = masks[0][None, ...]
-            predicts = predicts[0][None, ...]
-        images = images.permute(0, 2, 3, 1).cpu().numpy()
-        if masks.shape[1] == 1:
-            masks = masks.squeeze().cpu().numpy()
-        else:
-            masks = masks.argmax(dim=1).cpu().numpy()
-        images = (images * 255).astype(np.uint8)
-        masks = convert_seg_mask_to_color(masks, self.cls_to_color)
-        predicts = convert_seg_mask_to_color(predicts, self.cls_to_color)
-
-        # Show images
-        for i in range(images.shape[0]):
-            image = images[i]
-            mask = masks[i]
-            predict = predicts[i]
-
-            if self.resize_shape is not None:
-                image = resize_image(image, self.resize_shape)
-                mask = resize_image(mask, self.resize_shape)
-                predict = resize_image(predict, self.resize_shape)
-
-            show_images_cv2(
-                [image, mask, predict], ['image', 'mask', 'predict'],
-                delay=self.wait_time, destroy_windows=False
-            )
 
 
 def random_crop(

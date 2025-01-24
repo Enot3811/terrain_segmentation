@@ -1,17 +1,17 @@
 # Define constants
-num_classes: &num_classes 4
+num_classes: &num_classes 5
 image_channels: &image_channels 3
-data_root: &data_root ../data/satellite/segmentation/landcover_ai_v1
+data_root: &data_root ../data/satellite/segmentation/landcover_ai_v1/test_dset
 
 # Environment parameters
 random_seed: 42
-device: cpu
-train_dir: trains/deeplabv3plus_landcoverai
+device: cuda
+train_dir: trains/test_train
 
 # Optimizer parameters
 optimizer: Adam
 start_lr: 0.001
-end_lr: 1e-6
+end_lr: 0.00001
 weight_decay: 0.005
 grad_accumulate_steps: 4
 
@@ -23,22 +23,19 @@ loss:
 
 # Training parameters
 continue_training: false
-n_epoch: 30
+n_epoch: 10
 
 # Model parameters
 model:
   class_name: DeepLabV3Plus
   params:
-    output_channels: *num_classes
-    n_stages: 5
-    initial_channels: 64
-    channels_upsampling: 2
-    image_channels: *image_channels
-    use_pad: true
-
+    encoder_name: resnet50
+    encoder_weights: imagenet
+    in_channels: *image_channels
+    classes: *num_classes
 
 # Transforms
-train_transforms: &transforms
+train_transforms:
   rotate:
     class_name: Rotate
     params:
@@ -78,7 +75,7 @@ val_transforms:
 # Dataset parameters
 train_dataset_params:
   dataset_path: "{data_root}/train"
-  one_hot_encoding: &one_hot_encoding 
+  one_hot_encoding: &one_hot_encoding false
 
 val_dataset_params:
   dataset_path: "{data_root}/val"
@@ -94,7 +91,7 @@ shuffle_val: false
 callback:
   steps_per_call: 16
   params:
-    save_dir: {train_dir}/images
+    save_dir: "{train_dir}/images"
     only_first_image: true
     resize_shape: null
     save_stacked: true
@@ -106,23 +103,23 @@ metrics:
     class_name: F1Score
     params:
       task: multiclass
-      num_classes: 4
+      num_classes: *num_classes
       average: null
   dice:
-    class_name: Dice
+    class_name: DiceScore
     params:
-      task: multiclass
-      num_classes: 4
+      num_classes: *num_classes
       average: null
+      input_format: index
   pixel_acc:
     class_name: Accuracy
     params:
       task: multiclass
-      num_classes: 4
+      num_classes: *num_classes
       average: null
   iou:
     class_name: JaccardIndex
     params:
       task: multiclass
-      num_classes: 4
+      num_classes: *num_classes
       average: null

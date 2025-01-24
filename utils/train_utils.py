@@ -1,5 +1,6 @@
 """Module with helper functions for training."""
 
+import torchmetrics.segmentation
 import yaml
 from typing import Dict, Any, Optional, Tuple, Type
 from pathlib import Path
@@ -114,7 +115,9 @@ def get_metric_class(class_name: str) -> Type[torchmetrics.Metric]:
     ValueError
         If metric class is not found in torchmetrics.
     """
-    if hasattr(torchmetrics, class_name):
+    if class_name == 'DiceScore':
+        return torchmetrics.segmentation.DiceScore
+    elif hasattr(torchmetrics, class_name):
         return getattr(torchmetrics, class_name)
     raise ValueError(f"Metric class {class_name} not found in torchmetrics")
 
