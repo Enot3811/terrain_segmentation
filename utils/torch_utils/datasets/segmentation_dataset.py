@@ -59,7 +59,7 @@ class SegmentationDataset(Dataset):
 
     def __init__(
         self,
-        dset_pth: Path,
+        dataset_path: Path,
         transforms: Optional[callable] = None,
         one_hot_encoding: bool = False,
     ) -> None:
@@ -67,7 +67,7 @@ class SegmentationDataset(Dataset):
 
         Parameters
         ----------
-        dset_pth : Path
+        dataset_path : Path
             Path to the dataset directory. It expected to contain
             "images" and "masks" directories and "classes.json" file.
         transforms : Optional[callable], optional
@@ -78,10 +78,10 @@ class SegmentationDataset(Dataset):
             Whether to convert mask to one-hot encoding, by default `True`.
         """
         # Dataset path
-        self.dset_pth = prepare_path(dset_pth)
-        self.image_dir = self.dset_pth / 'images'
-        self.mask_dir = self.dset_pth / 'masks'
-        self.classes_json = self.dset_pth / 'classes.json'
+        self.dataset_pth = prepare_path(dataset_path)
+        self.image_dir = self.dataset_pth / 'images'
+        self.mask_dir = self.dataset_pth / 'masks'
+        self.classes_json = self.dataset_pth / 'classes.json'
 
         # Check paths
         if not self.image_dir.exists():
