@@ -1,0 +1,96 @@
+# Define constants
+constants: &constants
+  num_classes: &num_classes 4
+  image_channels: &image_channels 3
+  data_root: &data_root ../data/qgis/bing_train
+
+# Environment parameters
+random_seed: 42
+device: cuda
+train_dir: dir/to/save/train
+
+# Optimizer parameters
+optimizer: Adam
+start_lr: 0.001
+end_lr: 1e-6
+weight_decay: 0.005
+grad_accumulate_steps: 4
+
+# Loss parameters (TODO обобщить на dice, bce, combined)
+loss_metric: cross_entropy
+ce_class_weights:
+  - 0.07574
+  - 0.49794
+  - 0.08663
+  - 0.33968
+
+# Training parameters
+continue_training: false
+n_epoch: 30
+
+# Model parameters
+model_params:
+  output_channels: *num_classes
+  n_stages: 5
+  initial_channels: 64
+  channels_upsampling: 2
+  image_channels: *image_channels
+  use_pad: true
+
+# Transforms
+train_transforms: &transforms
+  crop_size:
+    - 448
+    - 448
+val_transforms:
+  <<: *transforms
+
+# Dataset parameters
+train_dataset_params:
+  dset_pth: ${data_root}/train
+  one_hot_encoding: true
+
+val_dataset_params:
+  dset_pth: ${data_root}/val
+  one_hot_encoding: true
+
+# DataLoader parameters
+batch_size: 16
+num_workers: 8
+shuffle_train: true
+shuffle_val: false
+
+# Callbacks parameters
+callback_params:
+  steps_per_call: 16
+  save_images:
+    only_first_image: true
+    resize_shape: null
+    save_stacked: true
+
+# Metrics parameters
+metrics:
+  f1:
+    metric_class: F1Score
+    params:
+      task: multiclass
+      num_classes: 4
+      average: null
+  dice:
+    metric_class: Dice
+    params:
+      task: multiclass
+      num_classes: 4
+      average: null
+  pixel_acc:
+    metric_class: Accuracy
+    params:
+      task: multiclass
+      num_classes: 4
+      average: null
+  iou:
+    metric_class: JaccardIndex
+    params:
+      task: multiclass
+      num_classes: 4
+      average: null

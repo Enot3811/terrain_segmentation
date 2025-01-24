@@ -2,53 +2,25 @@
 
 
 from pathlib import Path
-import shutil
-import json
 import argparse
 
 import torch
-import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-import albumentations as A
+from torchmetrics import MeanMetric
 
-from unet.model import Unet
-from deeplabv3.deeplabv3 import create_deeplabv3_model
 from utils.torch_utils.datasets import SegmentationDataset
-from utils.torch_utils.metrics import (
-    MeanMetric, DiceLoss, CombinedDiceCrossEntropyLoss, iou_segmentation,
-    dice_coefficient, pixel_accuracy)
-from utils.torch_utils.functions import (
-    SaveImagesSegCallback, ShowPredictCallback)
+from utils.torch_utils.functions import SaveImagesSegCallback
+from utils.train_utils import (
+    get_transforms, read_config, create_train_dir, get_model, get_smp_loss_fn,
+    create_metric_collection)
 
 
 def main(config_pth: Path):
     # Read config
-    with open(config_pth, 'r') as f:
-        config_str = f.read()
-    config = json.loads(config_str)
-
-    # Check config correctness
-    if (config['train_dataset_params']['one_hot_encoding'] !=
-            config['val_dataset_params']['one_hot_encoding']):
-        raise ValueError('Train and val dataset params must have the same '
-                         'one-hot encoding value.')
-    elif (not config['train_dataset_params']['one_hot_encoding'] and
-          config['loss_metric'] in ['dice', 'combined']):
-        raise ValueError('Dice and combined loss metrics are supported only '
-                         'with one-hot encoding.')
-    elif Path(config['train_dir']).name != config_pth.stem:
-        input(f'Specified train directory "{config["train_dir"]}" '
-              'is not equal to config file name. '
-              'Press enter to continue.')
-    if config['model_name'] == 'deeplabv3':
-        main_loss_weight = config.get('main_loss_weight', None)
-        aux_loss_weight = config.get('aux_loss_weight', None)
-        if not main_loss_weight or not aux_loss_weight:
-            raise ValueError('Main and aux loss weights must be specified '
-                             'for deeplabv3 model.')
+    config = read_config(config_pth)
 
     # Random
     torch.manual_seed(config['random_seed'])
@@ -62,21 +34,7 @@ def main(config_pth: Path):
         device: torch.device = torch.device(config['device'])
 
     # Train dir
-    train_dir = Path(config['train_dir'])
-    tensorboard_dir = train_dir / 'tensorboard'
-    ckpt_dir = train_dir / 'ckpts'
-    if not config['continue_training']:
-        if train_dir.exists():
-            input(f'Specified directory "{str(train_dir)}" already exists. '
-                  'If continue, this directory will be deleted. '
-                  'Press enter to continue.')
-            shutil.rmtree(train_dir)
-        tensorboard_dir.mkdir(parents=True, exist_ok=True)
-        ckpt_dir.mkdir(parents=True, exist_ok=True)
-    if (config.get('callback_params', None) and
-            config['callback_params'].get('save_images', None)):
-        images_dir = train_dir / 'images'
-        images_dir.mkdir(parents=True, exist_ok=True)
+    train_dir, tensorboard_dir, ckpt_dir = create_train_dir(config)
 
     # Check and load checkpoint
     if config['continue_training']:
@@ -95,22 +53,8 @@ def main(config_pth: Path):
     log_writer = SummaryWriter(str(tensorboard_dir))
 
     # Get transforms
-    if config['train_transforms']:
-        train_transforms = []
-        if config['train_transforms']['crop_size']:
-            train_transforms.append(
-                A.RandomCrop(*config['train_transforms']['crop_size']))
-        train_transforms = A.Compose(train_transforms)
-    else:
-        train_transforms = None
-    if config['val_transforms']:
-        val_transforms = []
-        if config['val_transforms']['crop_size']:
-            val_transforms.append(
-                A.RandomCrop(*config['val_transforms']['crop_size']))
-        val_transforms = A.Compose(val_transforms)
-    else:
-        val_transforms = None
+    train_transforms = get_transforms(config['train_transforms'])
+    val_transforms = get_transforms(config['val_transforms'])
 
     # Get datasets and loaders
     train_dset = SegmentationDataset(
@@ -129,54 +73,23 @@ def main(config_pth: Path):
                             num_workers=config['num_workers'],
                             collate_fn=SegmentationDataset.collate_func)
 
-    # Get callbacks
-    if config.get('callback_params', None):
-        steps_per_call = config['callback_params']['steps_per_call']
-        callbacks = []
-        if config['callback_params'].get('save_images', None):
-            callbacks.append(SaveImagesSegCallback(
-                save_dir=images_dir,
-                cls_to_color=train_dset.id_to_color,
-                **config['callback_params']['save_images']
-            ))
-        if config['callback_params'].get('show_predict', None):
-            callbacks.append(ShowPredictCallback(
-                cls_to_color=train_dset.id_to_color,
-                **config['callback_params']['show_predict']
-            ))
+    # Get callback
+    if config.get('callback', None):
+        callback = SaveImagesSegCallback(
+            cls_to_color=train_dset.class_to_color,
+            **config['callback']['params'])
     else:
-        callbacks = None
+        callback = None
 
     # Get the model
-    if config['model_name'] == 'unet':
-        model = Unet(**config['model_params'])
-    elif config['model_name'] == 'deeplabv3':
-        model = create_deeplabv3_model(**config['model_params'])
-    else:
-        raise ValueError(f'Got unsupported model name: {config["model_name"]}')
+    model = get_model(config['model'])
     model.to(device=device)
     if model_params:
         model.load_state_dict(model_params)
 
     # Get loss function
-    if config['loss_metric'] == 'cross_entropy':
-        cls_weights = torch.tensor(config['ce_class_weights'],
-                                   device=device)
-        calculate_loss = nn.CrossEntropyLoss(weight=cls_weights)
-    elif config['loss_metric'] == 'dice':
-        calculate_loss = DiceLoss()
-    elif config['loss_metric'] == 'combined':
-        cls_weights = torch.tensor(config['ce_class_weights'],
-                                   device=device)
-        calculate_loss = CombinedDiceCrossEntropyLoss(
-            ce_class_weights=cls_weights)
-    elif config['loss_metric'] == 'binary_cross_entropy':
-        cls_weights = torch.tensor(config['bce_class_weights'],
-                                   device=device)
-        calculate_loss = nn.BCEWithLogitsLoss(pos_weight=cls_weights)
-    else:
-        raise ValueError(
-            f'Got unsupported loss metric: {config["loss_metric"]}')
+    # TODO: smp losses does not support class weights
+    loss_fn = get_smp_loss_fn(config['loss']).to(device=device)
 
     # Get the optimizer
     if config['optimizer'] == 'Adam':
@@ -197,45 +110,12 @@ def main(config_pth: Path):
         lr_scheduler.load_state_dict(lr_params)
 
     # Get metrics
-    train_loss_metric = MeanMetric()
-    val_loss_metric = MeanMetric()
-    train_loss_metric.to(device=device)
-    val_loss_metric.to(device=device)
-
-    train_iou_metric = MeanMetric()
-    train_dice_metric = MeanMetric()
-    train_pixel_acc_metric = MeanMetric()
-    train_iou_metric.to(device=device)
-    train_dice_metric.to(device=device)
-    train_pixel_acc_metric.to(device=device)
-
-    val_iou_metric = MeanMetric()
-    val_dice_metric = MeanMetric()
-    val_pixel_acc_metric = MeanMetric()
-    val_iou_metric.to(device=device)
-    val_dice_metric.to(device=device)
-    val_pixel_acc_metric.to(device=device)
-
-    # Create aux metrics for deeplabv3
-    if config['model_name'] == 'deeplabv3':
-        train_aux_loss_metric = MeanMetric()
-        val_aux_loss_metric = MeanMetric()
-        train_aux_loss_metric.to(device=device)
-        val_aux_loss_metric.to(device=device)
-
-        train_aux_iou_metric = MeanMetric()
-        train_aux_dice_metric = MeanMetric()
-        train_aux_pixel_acc_metric = MeanMetric()
-        train_aux_iou_metric.to(device=device)
-        train_aux_dice_metric.to(device=device)
-        train_aux_pixel_acc_metric.to(device=device)
-
-        val_aux_iou_metric = MeanMetric()
-        val_aux_dice_metric = MeanMetric()
-        val_aux_pixel_acc_metric = MeanMetric()
-        val_aux_iou_metric.to(device=device)
-        val_aux_dice_metric.to(device=device)
-        val_aux_pixel_acc_metric.to(device=device)
+    train_metrics = create_metric_collection(config['metrics']).to(
+        device=device)
+    val_metrics = create_metric_collection(config['metrics']).to(
+        device=device)
+    train_loss_metric = MeanMetric().to(device=device)
+    val_loss_metric = MeanMetric().to(device=device)
 
     # Do training
     best_metric = None
@@ -247,38 +127,10 @@ def main(config_pth: Path):
         for step, batch in enumerate(train_loader):
             images, masks, img_paths, mask_paths, shapes = batch
             images = images.to(device=device)
+            masks = masks.to(device=device)
             out_logits = model(images)  # b, n_cls, h, w
 
-            # Prepare masks for loss calculation
-            if config['loss_metric'] == 'binary_cross_entropy':
-                # BCE needs float32 masks
-                masks = masks.to(dtype=torch.float32, device=device)
-            else:
-                masks = masks.to(device=device)
-
-            # Different loss calculation for different models
-            if config['model_name'] == 'unet':
-
-                if config['loss_metric'] == 'cross_entropy':
-                    loss = calculate_loss(out_logits, masks.argmax(dim=1))
-                else:
-                    loss = calculate_loss(out_logits, masks)
-            
-            else:  # deeplabv3
-
-                aux_logits = out_logits['aux']
-                out_logits = out_logits['out']
-                if config['loss_metric'] == 'cross_entropy':
-                    main_loss = calculate_loss(
-                        out_logits, masks.argmax(dim=1))
-                    aux_loss = calculate_loss(
-                        aux_logits, masks.argmax(dim=1))
-                else:
-                    main_loss = calculate_loss(out_logits, masks)
-                    aux_loss = calculate_loss(aux_logits, masks)
-                loss = (main_loss * main_loss_weight +
-                        aux_loss * aux_loss_weight)
-
+            loss = loss_fn(out_logits, masks)
             loss.backward()
 
             # Whether to update weights
@@ -289,72 +141,25 @@ def main(config_pth: Path):
 
             # Calculate metrics
             with torch.no_grad():
-                
-                iou = iou_segmentation(
-                    out_logits, masks, activation='softmax')
-                dice = dice_coefficient(
-                    out_logits, masks, activation='softmax')
-                pixel_acc = pixel_accuracy(out_logits, masks)
-
-                # Calculate aux metrics for deeplabv3
-                if config['model_name'] == 'deeplabv3':
-                    aux_iou = iou_segmentation(
-                        aux_logits, masks, activation='softmax')
-                    aux_dice = dice_coefficient(
-                        aux_logits, masks, activation='softmax')
-                    aux_pixel_acc = pixel_accuracy(aux_logits, masks)
-
-            # Save metrics
-            train_loss_metric.update(loss)
-            train_iou_metric.update(iou)
-            train_dice_metric.update(dice)
-            train_pixel_acc_metric.update(pixel_acc)
-
-            if config['model_name'] == 'deeplabv3':
-                train_aux_loss_metric.update(aux_loss)
-                train_aux_iou_metric.update(aux_iou)
-                train_aux_dice_metric.update(aux_dice)
-                train_aux_pixel_acc_metric.update(aux_pixel_acc)
+                predicts = out_logits.argmax(dim=1)
+                train_metrics.update(predicts, masks)
+                train_loss_metric.update(loss)
 
             # Call callbacks
-            if callbacks and (step % steps_per_call == 0 or
-                              step + 1 == len(train_loader)):
-                
-                # Make predictions for callbacks
-                if train_dset.binary_segmentation:
-                    predicts = (out_logits.squeeze().detach().cpu().numpy() >
-                                config['conf_threshold'])
-                else:
-                    predicts = out_logits.argmax(dim=1).detach().cpu().numpy()
-
-                for callback in callbacks:
-                    callback(batch, predicts, epoch, step)
+            if (callback and
+                    step % config['callback']['steps_per_call'] == 0 or
+                    step + 1 == len(train_loader)):
+                callback(batch, predicts, epoch, step)
 
             # Update progress bar
             pbar.update()
             pbar.set_postfix_str(f'Batch loss: {loss.item():.4f}')
         
-        # Calculate mean metrics
+        # Calculate mean epoch loss
         train_loss = train_loss_metric.compute()
-        train_iou = train_iou_metric.compute()
-        train_dice = train_dice_metric.compute()
-        train_pixel_acc = train_pixel_acc_metric.compute()
         train_loss_metric.reset()
-        train_iou_metric.reset()
-        train_dice_metric.reset()
-        train_pixel_acc_metric.reset()
         pbar.set_postfix_str(f'Epoch loss: {train_loss.item():.4f}')
         pbar.close()
-        
-        if config['model_name'] == 'deeplabv3':
-            train_aux_loss = train_aux_loss_metric.compute()
-            train_aux_iou = train_aux_iou_metric.compute()
-            train_aux_dice = train_aux_dice_metric.compute()
-            train_aux_pixel_acc = train_aux_pixel_acc_metric.compute()
-            train_aux_loss_metric.reset()
-            train_aux_iou_metric.reset()
-            train_aux_dice_metric.reset()
-            train_aux_pixel_acc_metric.reset()
         
         # Val epoch
         with torch.no_grad():
@@ -363,146 +168,63 @@ def main(config_pth: Path):
             for step, batch in enumerate(val_loader):
                 images, masks, img_paths, mask_paths, shapes = batch
                 images = images.to(device=device)
+                masks = masks.to(device=device)
                 out_logits = model(images)
 
-                # Prepare masks for loss calculation
-                if config['loss_metric'] == 'binary_cross_entropy':
-                    # BCE needs float32 masks
-                    masks = masks.to(dtype=torch.float32, device=device)
-                else:
-                    masks = masks.to(device=device)
-
-                # Different loss calculation for different models
-                if config['model_name'] == 'unet':
-
-                    if config['loss_metric'] == 'cross_entropy':
-                        loss = calculate_loss(out_logits, masks.argmax(dim=1))
-                    else:
-                        loss = calculate_loss(out_logits, masks)
-                
-                else:  # deeplabv3
-
-                    aux_logits = out_logits['aux']
-                    out_logits = out_logits['out']
-                    if config['loss_metric'] == 'cross_entropy':
-                        main_loss = calculate_loss(
-                            out_logits, masks.argmax(dim=1))
-                        aux_loss = calculate_loss(
-                            aux_logits, masks.argmax(dim=1))
-                    else:
-                        main_loss = calculate_loss(out_logits, masks)
-                        aux_loss = calculate_loss(aux_logits, masks)
-                    loss = (main_loss * main_loss_weight +
-                            aux_loss * aux_loss_weight)
+                loss = loss_fn(out_logits, masks)
 
                 # Calculate metrics
-                iou = iou_segmentation(
-                    out_logits, masks, activation='softmax')
-                dice = dice_coefficient(
-                    out_logits, masks, activation='softmax')
-                pixel_acc = pixel_accuracy(out_logits, masks)
-
-                # Calculate aux metrics for deeplabv3
-                if config['model_name'] == 'deeplabv3':
-                    aux_iou = iou_segmentation(
-                        aux_logits, masks, activation='softmax')
-                    aux_dice = dice_coefficient(
-                        aux_logits, masks, activation='softmax')
-                    aux_pixel_acc = pixel_accuracy(aux_logits, masks)
-
-                # Save metrics
+                predicts = out_logits.argmax(dim=1)
+                val_metrics.update(predicts, masks)
                 val_loss_metric.update(loss)
-                val_iou_metric.update(iou)
-                val_dice_metric.update(dice)
-                val_pixel_acc_metric.update(pixel_acc)
-
-                if config['model_name'] == 'deeplabv3':
-                    val_aux_loss_metric.update(aux_loss)
-                    val_aux_iou_metric.update(aux_iou)
-                    val_aux_dice_metric.update(aux_dice)
-                    val_aux_pixel_acc_metric.update(aux_pixel_acc)
 
                 # Call callbacks
-                if callbacks and (step % steps_per_call == 0 or
-                                  step + 1 == len(val_loader)):
-                    
-                    # Make predictions for callbacks
-                    if train_dset.binary_segmentation:
-                        predicts = (
-                            out_logits.squeeze().detach().cpu().numpy() >
-                            config['conf_threshold'])
-                    else:
-                        predicts = (
-                            out_logits.argmax(dim=1).detach().cpu().numpy())
-
-                    for callback in callbacks:
-                        callback(batch, predicts, epoch, step)
+                if (callback and
+                        step % config['callback']['steps_per_call'] == 0 or
+                        step + 1 == len(val_loader)):
+                    callback(batch, predicts, epoch, step)
 
                 # Update progress bar
                 pbar.update()
                 pbar.set_postfix_str(f'Batch loss: {loss.item():.4f}')
 
-            # Calculate mean metrics
+            # Calculate mean epoch loss
             val_loss = val_loss_metric.compute()
-            val_iou = val_iou_metric.compute()
-            val_dice = val_dice_metric.compute()
-            val_pixel_acc = val_pixel_acc_metric.compute()
             val_loss_metric.reset()
-            val_iou_metric.reset()
-            val_dice_metric.reset()
-            val_pixel_acc_metric.reset()
             pbar.set_postfix_str(f'Epoch loss: {val_loss.item():.4f}')
             pbar.close()
-
-            if config['model_name'] == 'deeplabv3':
-                val_aux_loss = val_aux_loss_metric.compute()
-                val_aux_iou = val_aux_iou_metric.compute()
-                val_aux_dice = val_aux_dice_metric.compute()
-                val_aux_pixel_acc = val_aux_pixel_acc_metric.compute()
-                val_aux_loss_metric.reset()
-                val_aux_iou_metric.reset()
-                val_aux_dice_metric.reset()
-                val_aux_pixel_acc_metric.reset()
 
         # Lr scheduler
         lr_scheduler.step()
         lr = lr_scheduler.get_last_lr()[0]
 
-        # Log epoch metrics
+        # Log epoch losses
         log_writer.add_scalars('loss', {
             'train': train_loss,
             'val': val_loss
         }, epoch)
 
-        log_writer.add_scalars('iou', {
-            'train': train_iou,
-            'val': val_iou
-        }, epoch)
-        log_writer.add_scalars('dice', {
-            'train': train_dice,
-            'val': val_dice
-        }, epoch)
-        log_writer.add_scalars('pixel_acc', {
-            'train': train_pixel_acc,
-            'val': val_pixel_acc
-        }, epoch)
+        # Log epoch metrics
+        train_metric_values = train_metrics.compute()
+        val_metric_values = val_metrics.compute()
+        train_metrics.reset()
+        val_metrics.reset()
 
-        if config['model_name'] == 'deeplabv3':
-            log_writer.add_scalars('aux_loss', {
-                'train': train_aux_loss,
-                'val': val_aux_loss
+        for metric_name in train_metrics:
+            # Log mean values
+            log_writer.add_scalars(metric_name, {
+                'train': train_metric_values[metric_name].mean(),
+                'val': val_metric_values[metric_name].mean(),
             }, epoch)
-            log_writer.add_scalars('aux_iou', {
-                'train': train_aux_iou,
-                'val': val_aux_iou
+
+            # Log class values
+            log_writer.add_scalars(metric_name + '_per_class', {
+                f'train_class_{i}': value
+                for i, value in enumerate(train_metric_values[metric_name])
             }, epoch)
-            log_writer.add_scalars('aux_dice', {
-                'train': train_aux_dice,
-                'val': val_aux_dice
-            }, epoch)
-            log_writer.add_scalars('aux_pixel_acc', {
-                'train': train_aux_pixel_acc,
-                'val': val_aux_pixel_acc
+            log_writer.add_scalars(metric_name + '_per_class', {
+                f'val_class_{i}': value
+                for i, value in enumerate(val_metric_values[metric_name])
             }, epoch)
 
         log_writer.add_scalar('Lr', lr, epoch)
