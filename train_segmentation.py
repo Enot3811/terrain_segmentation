@@ -76,7 +76,7 @@ def main(config_pth: Path):
     # Get callback
     if config.get('callback', None):
         callback = SaveImagesSegCallback(
-            cls_to_color=train_dset.class_to_color,
+            cls_to_color=train_dset.id_to_color,
             **config['callback']['params'])
     else:
         callback = None
@@ -255,7 +255,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         'config_pth', type=Path,
         help='Path to train config.')
-    args = parser.parse_args()
+    args = parser.parse_args(['train_configs/test_config.yaml'])
 
     if not args.config_pth.exists():
         raise FileNotFoundError(
