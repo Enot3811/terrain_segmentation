@@ -1,8 +1,8 @@
 # Define constants
 num_classes: &num_classes 5
 image_channels: &image_channels 3
-# data_root: &data_root ../data/satellite/segmentation/landcover_ai_v1/test_dset
-data_root: &data_root ../data/satellite/segmentation/landcover_ai_v1/
+data_root: &data_root ../data/satellite/segmentation/landcover_ai_v1/test_dset
+# data_root: &data_root ../data/satellite/segmentation/landcover_ai_v1/
 
 # Environment parameters
 random_seed: 42
@@ -91,20 +91,20 @@ val_dataset_params:
   one_hot_encoding: *one_hot_encoding
 
 # DataLoader parameters
-batch_size: 16
-num_workers: 0
+batch_size: 32
+num_workers: 8
 shuffle_train: true
 shuffle_val: false
 
 # Callbacks parameters
 callback:
-  steps_per_call: 16
+  steps_per_call: 32
   params:
     save_dir: "{train_dir}/images"
     only_first_image: true
     resize_shape: null
     save_stacked: true
-    show_time: 0
+    show_time: 1
 
 # Metrics parameters
 metrics:

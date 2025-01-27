@@ -23,7 +23,7 @@ loss:
 
 # Training parameters
 continue_training: false
-n_epoch: 100
+n_epoch: 30
 
 # Model parameters
 model:
@@ -41,6 +41,7 @@ train_transforms:
     params:
       limit: 180
       crop_border: true
+      p: 1
   horizontal_flip:
     class_name: HorizontalFlip
     params:
@@ -59,6 +60,10 @@ train_transforms:
     params:
       mean: [0.485, 0.456, 0.406]
       std: [0.229, 0.224, 0.225]
+  to_tensor:
+    class_name: ToTensorV2
+    params:
+      transpose_mask: false
 
 val_transforms:
   resize:
@@ -71,6 +76,10 @@ val_transforms:
     params:
       mean: [0.485, 0.456, 0.406]
       std: [0.229, 0.224, 0.225]
+  to_tensor:
+    class_name: ToTensorV2
+    params:
+      transpose_mask: false
 
 # Dataset parameters
 train_dataset_params:
@@ -82,14 +91,14 @@ val_dataset_params:
   one_hot_encoding: *one_hot_encoding
 
 # DataLoader parameters
-batch_size: 16
-num_workers: 0
+batch_size: 32
+num_workers: 8
 shuffle_train: true
 shuffle_val: false
 
 # Callbacks parameters
 callback:
-  steps_per_call: 16
+  steps_per_call: 100
   params:
     save_dir: "{train_dir}/images"
     only_first_image: true

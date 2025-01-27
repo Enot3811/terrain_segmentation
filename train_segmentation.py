@@ -255,7 +255,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         'config_pth', type=Path,
         help='Path to train config.')
-    args = parser.parse_args(['train_configs/test_config.yaml'])
+    args = parser.parse_args()
 
     if not args.config_pth.exists():
         raise FileNotFoundError(
