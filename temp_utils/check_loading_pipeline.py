@@ -27,6 +27,10 @@ def main(config_path: str):
         val_transforms = get_transforms(config['val_transforms'])
     else:
         val_transforms = None
+
+    # Mean and std for denormalization
+    mean = np.array(config['train_transforms']['normalize']['params']['mean'])
+    std = np.array(config['train_transforms']['normalize']['params']['std'])
     
     # Get datasets and loaders
     train_dset = SegmentationDataset(
@@ -56,16 +60,15 @@ def main(config_path: str):
                 image = images[i].permute(1, 2, 0).numpy()
                 mask = masks[i].numpy()
 
+                print('Image min:', image.min(), ', Image max:', image.max())
+
                 # Denormalize image
-                max_val, min_val = image.max(), image.min()
-                print('Image max:', max_val, ', Image min:', min_val)
-                image = (((image - min_val) / (max_val - min_val) * 255)
-                         .astype(np.uint8))
+                image = ((image * std + mean) * 255).astype(np.uint8)
                 images_to_show = [image]
                 titles = ['image']
 
                 # Show each mask separately
-                if config['one_hot_encoding']:
+                if config['train_dataset_params']['one_hot_encoding']:
                     for j in range(mask.shape[0]):
                         mask_j = mask[j].astype(np.uint8)
                         mask_j = 255 * mask_j

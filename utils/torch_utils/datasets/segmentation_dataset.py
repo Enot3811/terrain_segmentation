@@ -29,6 +29,9 @@ import numpy as np
 from numpy.typing import NDArray
 from tqdm import tqdm
 from loguru import logger
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
+from natsort import natsorted
 
 from ..functions import convert_seg_mask_to_one_hot, convert_seg_mask_to_color
 from ...data_utils.functions import (
@@ -60,7 +63,7 @@ class SegmentationDataset(Dataset):
     def __init__(
         self,
         dataset_path: Path,
-        transforms: Optional[callable] = None,
+        transforms: Optional[A.Compose] = None,
         one_hot_encoding: bool = False,
     ) -> None:
         """Initialize segmentation dataset.
@@ -70,10 +73,10 @@ class SegmentationDataset(Dataset):
         dataset_path : Path
             Path to the dataset directory. It expected to contain
             "images" and "masks" directories and "classes.json" file.
-        transforms : Optional[callable], optional
-            Transforms to apply to the samples.
-            It assumed to use albumentations.
-            By default None.
+        transforms : Optional[A.Compose], optional
+            Albumentations transforms to apply to the samples.
+            If `None` then default min-max normalization and to tensor
+            conversion will be applied.
         one_hot_encoding : bool, optional
             Whether to convert mask to one-hot encoding, by default `True`.
         """
@@ -101,6 +104,12 @@ class SegmentationDataset(Dataset):
         self.samples = self._collect_samples()
 
         # Transforms and preprocessing
+        if transforms is None:
+            # Default transforms
+            transforms = A.Compose([
+                A.Normalize(normalization='min_max'),
+                ToTensorV2()
+            ])
         self.transforms = transforms
         self.one_hot_encoding = one_hot_encoding
 
@@ -205,14 +214,12 @@ class SegmentationDataset(Dataset):
             Normalized image, segmentation mask, image path, mask path,
             and source image shape.
         """
-        # Convert mask
-        mask = torch.tensor(sample['mask'], dtype=torch.long)  # h, w
+        # Convert to one-hot encoding if needed
+        mask = sample['mask'].long()  # h, w
         if self.one_hot_encoding:
             mask = self.seg_mask_to_one_hot(mask, self.n_classes)  # c, h, w
 
-        # Convert image to float tensor and normalize
-        image = torch.tensor(
-            sample['image'].transpose(2, 0, 1).astype(np.float32) / 255)
+        image = sample['image']
 
         return (image, mask, sample['image_path'], sample['mask_path'],
                 sample['shape'])
@@ -275,12 +282,12 @@ class SegmentationDataset(Dataset):
         ValueError
             If number of images and masks are not equal.
         """
-        img_paths = sorted(
+        img_paths = natsorted(
             collect_paths(self.image_dir,
                           file_extensions=IMAGE_EXTENSIONS + ['npy', 'NPY']),
             key=lambda x: x.stem
         )
-        mask_paths = sorted(
+        mask_paths = natsorted(
             collect_paths(self.mask_dir,
                           file_extensions=IMAGE_EXTENSIONS + ['npy', 'NPY']),
             key=lambda x: x.stem

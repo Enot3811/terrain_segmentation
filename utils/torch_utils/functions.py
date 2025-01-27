@@ -347,6 +347,9 @@ class SaveImagesSegCallback:
         self.save_stacked = save_stacked
         self.cls_to_color = cls_to_color
         self.show_time = show_time
+        # TODO сделать денормализацию через параметры
+        self.mean = np.array([0.485, 0.456, 0.406])
+        self.std = np.array([0.229, 0.224, 0.225])
 
     def __call__(
         self,
@@ -381,13 +384,7 @@ class SaveImagesSegCallback:
         if masks.ndim == 4:
             masks = masks.argmax(dim=1)
         masks = masks.cpu().numpy()
-        # TODO сделать денормализацию через параметры
-        # mean = np.array([0.485, 0.456, 0.406])
-        # std = np.array([0.229, 0.224, 0.225])
-        # images = (images * std + mean) * 255
-        max_val, min_val = images.max(), images.min()
-        images = ((images - min_val) / (max_val - min_val) * 255)
-        images = images.astype(np.uint8)
+        images = ((images * self.std + self.mean) * 255).astype(np.uint8)
         masks = convert_seg_mask_to_color(masks, self.cls_to_color)
         predicts = convert_seg_mask_to_color(predicts, self.cls_to_color)
 

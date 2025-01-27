@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 
 import albumentations as A
+from albumentations.pytorch import ToTensorV2
 import torch
 import segmentation_models_pytorch as smp
 import torchmetrics
@@ -15,7 +16,9 @@ import torchmetrics
 def get_transforms(transforms_conf: Dict[str, Any]) -> Optional[A.Compose]:
     transforms = []
     for transform_conf in transforms_conf.values():
-        if hasattr(A, transform_conf['class_name']):
+        if transform_conf['class_name'] == 'ToTensorV2':
+            transforms.append(ToTensorV2())
+        elif hasattr(A, transform_conf['class_name']):
             transform_class = getattr(A, transform_conf['class_name'])
             transform_params = transform_conf['params']
             transform = transform_class(**transform_params)
