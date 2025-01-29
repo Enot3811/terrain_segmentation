@@ -6,7 +6,7 @@ data_root: &data_root ../data/satellite/segmentation/landcover_ai_v1/
 # Environment parameters
 random_seed: 42
 device: cuda
-train_dir: trains/landcoverai/unet/resnet50
+train_dir: trains/landcoverai/unet/resnet50_60ep
 
 # Optimizer parameters
 optimizer: Adam
