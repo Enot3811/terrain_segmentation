@@ -17,12 +17,12 @@ from utils.torch_utils.functions import read_segmentation_mask
 from utils.argparse_utils import natural_int
 
 
-def main(image_dir: Path, n_classes: int, verbose: bool):
+def main(masks_dir: Path, n_classes: int, quiet: bool):
 
-    pths = sorted(collect_paths(image_dir, IMAGE_EXTENSIONS + ['npy']))
+    pths = sorted(collect_paths(masks_dir, IMAGE_EXTENSIONS + ['npy']))
 
     class_counts = torch.zeros(n_classes, dtype=torch.float64)
-    for pth in tqdm(pths, desc='Calculate class weights', disable=not verbose):
+    for pth in tqdm(pths, desc='Calculate class weights', disable=quiet):
 
         mask = (torch.from_numpy(
             read_segmentation_mask(pth, one_hot=True, n_classes=n_classes)
@@ -54,16 +54,16 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
-        'image_dir', type=Path, help="A dataset's image directory.")
+        'masks_dir', type=Path, help="A dataset's masks directory.")
     parser.add_argument(
         'n_classes', type=natural_int, help='Number of classes.')
     parser.add_argument(
-        '--verbose', action='store_true', help='Show progress bar.')
+        '--quiet', action='store_true', help='Disable progress bar.')
     args = parser.parse_args()
     return args
 
 
 if __name__ == '__main__':
     args = parse_args()
-    main(image_dir=args.image_dir, n_classes=args.n_classes,
-         verbose=args.verbose)
+    main(masks_dir=args.masks_dir, n_classes=args.n_classes,
+         quiet=args.quiet)
