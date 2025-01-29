@@ -1,13 +1,12 @@
 # Define constants
 num_classes: &num_classes 5
 image_channels: &image_channels 3
-data_root: &data_root ../data/satellite/segmentation/landcover_ai_v1/test_dset
-# data_root: &data_root ../data/satellite/segmentation/landcover_ai_v1/
+data_root: &data_root ../data/satellite/segmentation/landcover_ai_v1/
 
 # Environment parameters
 random_seed: 42
 device: cuda
-train_dir: trains/test_train
+train_dir: trains/landcoverai/deeplabv3plus/xception
 
 # Optimizer parameters
 optimizer: Adam
@@ -18,19 +17,13 @@ grad_accumulate_steps: 16
 
 # Loss parameters
 loss:
-  class_name: SMPDiceLossWrapper
+  class_name: DiceLoss
   params:
     mode: multiclass
-    class_weights:
-      - 0.05123851220069638
-      - 0.42146013130589155
-      - 0.0677579641545095
-      - 0.1534361681589021
-      - 0.30610722418000047
 
 # Training parameters
 continue_training: false
-n_epoch: 10
+n_epoch: 30
 
 # Model parameters
 model:

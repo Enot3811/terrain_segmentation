@@ -6,7 +6,7 @@ data_root: &data_root ../data/satellite/segmentation/landcover_ai_v1/
 # Environment parameters
 random_seed: 42
 device: cuda
-train_dir: trains/deeplabv3plus_landcoverai
+train_dir: trains/landcoverai/unet/resnet50
 
 # Optimizer parameters
 optimizer: Adam
@@ -27,7 +27,7 @@ n_epoch: 30
 
 # Model parameters
 model:
-  class_name: DeepLabV3Plus
+  class_name: Unet
   params:
     encoder_name: resnet50
     encoder_weights: imagenet
