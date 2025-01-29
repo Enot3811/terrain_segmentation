@@ -260,8 +260,8 @@ def convert_seg_mask_to_one_hot(
     if cls_dim == -1:
         cls_dim = len(seg_mask.shape)
     one_hot = torch.zeros(
-        (*seg_mask.shape[:cls_dim], n_classes, *seg_mask.shape[cls_dim + 1:]),
-        dtype=torch.long)
+        (*seg_mask.shape[:cls_dim], n_classes, *seg_mask.shape[cls_dim:]),
+        dtype=torch.long, device=seg_mask.device)
     
     # Fill one-hot mask by iterating over classes
     for cls_id in range(n_classes):
