@@ -88,7 +88,6 @@ def main(config_pth: Path):
         model.load_state_dict(model_params)
 
     # Get loss function
-    # TODO: smp losses does not support class weights
     loss_fn = get_smp_loss_fn(config['loss']).to(device=device)
 
     # Get the optimizer
@@ -219,11 +218,11 @@ def main(config_pth: Path):
 
             # Log class values
             log_writer.add_scalars(metric_name + '_per_class', {
-                f'train_class_{i}': value
+                f'train_class_{train_dset.id_to_class[i]}': value
                 for i, value in enumerate(train_metric_values[metric_name])
             }, epoch)
             log_writer.add_scalars(metric_name + '_per_class', {
-                f'val_class_{i}': value
+                f'val_class_{val_dset.id_to_class[i]}': value
                 for i, value in enumerate(val_metric_values[metric_name])
             }, epoch)
 

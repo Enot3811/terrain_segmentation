@@ -2,7 +2,7 @@
 
 import torchmetrics.segmentation
 import yaml
-from typing import Dict, Any, Optional, Tuple, Type
+from typing import Dict, Any, Optional, Tuple, Type, List, Union
 from pathlib import Path
 import shutil
 
@@ -65,7 +65,12 @@ def read_config(config_path: str) -> Dict[str, Any]:
 
 
 def get_smp_loss_fn(loss_config: Dict[str, Any]) -> torch.nn.Module:
-    if hasattr(smp.losses, loss_config['class_name']):
+    if loss_config['class_name'] == 'SMPDiceLossWrapper':
+        loss_class = SMPDiceLossWrapper
+        loss_params = loss_config['params']
+        loss = loss_class(**loss_params)
+        return loss
+    elif hasattr(smp.losses, loss_config['class_name']):
         loss_class = getattr(smp.losses, loss_config['class_name'])
         loss_params = loss_config['params']
         loss = loss_class(**loss_params)
@@ -135,3 +140,88 @@ def create_metric_collection(
         metric = metric_class(**metric_params)
         metrics.append(metric)
     return torchmetrics.MetricCollection(metrics)
+
+
+class SMPDiceLossWrapper(smp.losses.DiceLoss):
+    def __init__(
+        self,
+        mode: str,
+        classes: Optional[List[int]] = None,
+        log_loss: bool = False,
+        from_logits: bool = True,
+        smooth: float = 0.0,
+        ignore_index: Optional[int] = None,
+        eps: float = 1e-7,
+        class_weights: Optional[Union[torch.Tensor, List[float]]] = None,
+        reduction: Optional[str] = 'mean'
+    ):
+        """Wrapper for DiceLoss from segmentation_models_pytorch.
+
+        This wrapper allows to weigh the loss for each class and to use
+        user-defined reduction method.
+
+        Parameters
+        ----------
+        mode : str
+            Loss mode 'binary', 'multiclass' or 'multilabel'
+        classes : Optional[List[int]], optional
+            List of classes that contribute in loss computation
+        log_loss : bool, optional
+            If True, loss computed as `- log(dice_coeff)`
+        from_logits : bool, optional
+            If True, assumes input is raw logits
+        smooth : float, optional
+            Smoothness constant for dice coefficient
+        ignore_index : Optional[int], optional
+            Label that indicates ignored pixels
+        eps : float, optional
+            Small epsilon for numerical stability
+        class_weights : Optional[torch.Tensor], optional
+            Tensor of class weights (shape [C])
+        reduction : Optional[str], optional
+            Reduction method: 'mean', 'sum', 'none' or None
+
+        Raises
+        ------
+        ValueError
+            _description_
+        """
+        super().__init__(
+            mode=mode,
+            classes=classes,
+            log_loss=log_loss,
+            from_logits=from_logits,
+            smooth=smooth,
+            ignore_index=ignore_index,
+            eps=eps)
+
+        if class_weights is not None:
+            if isinstance(class_weights, list):
+                class_weights = torch.tensor(class_weights)
+            self.register_buffer('class_weights', class_weights)
+        else:
+            self.class_weights = None
+        if reduction in ['mean', 'sum', 'none', None]:
+            self.reduction = reduction
+        else:
+            raise ValueError(f"Invalid reduction: {reduction}")
+
+    def aggregate_loss(self, loss: torch.Tensor) -> torch.Tensor:
+        """Overridden aggregation method.
+
+        Weights the loss for each class and uses the defined reduction method.
+        """
+        # Put weights into aggregation step to avoid editing forward method
+        loss = self.weigh_loss(loss)
+        if self.reduction == 'mean':
+            return loss.mean()
+        elif self.reduction == 'sum':
+            return loss.sum()
+        else:
+            return loss
+        
+    def weigh_loss(self, loss: torch.Tensor) -> torch.Tensor:
+        """Weights the loss for each class."""
+        if self.class_weights is not None:
+            loss = loss * self.class_weights
+        return loss
