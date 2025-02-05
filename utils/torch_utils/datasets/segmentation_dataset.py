@@ -200,8 +200,7 @@ class SegmentationDataset(Dataset):
     ) -> Tuple[FloatTensor, LongTensor, Path, Path, Tuple[int, int, int]]:
         """Process sample after applying transforms.
 
-        Normalize, convert to float tensor, convert mask to long tensor.
-        And convert mask to one-hot encoding if needed.
+        Convert mask to one-hot encoding if needed.
 
         Parameters
         ----------
